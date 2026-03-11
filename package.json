@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "dotenv": "^16.4.5",
-    "nodemailer": "^6.9.15",
+    "nodemailer": "^8.0.2",
     "playwright": "^1.50.1"
   }
 }
