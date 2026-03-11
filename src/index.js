@@ -52,14 +52,12 @@ async function getLoginContext(page) {
   const deadline = Date.now() + 30_000;
 
   while (Date.now() < deadline) {
-    // 1) Tentativa direta na página
     const hasTextInputs =
       (await page.locator('input[type="text"]:visible,input:not([type]):visible').count()) > 0;
     const hasPasswordInputs = (await page.locator('input[type="password"]:visible').count()) > 0;
 
     if (hasTextInputs && hasPasswordInputs) return { kind: 'page', ctx: page };
 
-    // 2) Tentativa em iframes
     for (const frame of page.frames()) {
       try {
         const userCount = await frame
@@ -79,16 +77,10 @@ async function getLoginContext(page) {
 }
 
 async function fillLoginFields(ctx, user, pass) {
-  // Usuário: candidates comuns + heurística final
   const userLocators = [
-    // por label/placeholder (quando existe)
     ctx.getByLabel?.(/Usuário/i),
     ctx.getByPlaceholder?.(/Usuário/i),
-
-    // por aria
     ctx.locator('input[aria-label*="Usu" i]'),
-
-    // por name/id comuns
     ctx.locator('input[name="usuario"]'),
     ctx.locator('input[id="usuario"]'),
     ctx.locator('input[name="user"]'),
@@ -97,12 +89,8 @@ async function fillLoginFields(ctx, user, pass) {
     ctx.locator('input[id="username"]'),
     ctx.locator('input[name="login"]'),
     ctx.locator('input[id="login"]'),
-
-    // heurística: primeiro campo texto do form
     ctx.locator('form input[type="text"]:visible'),
     ctx.locator('form input:not([type]):visible'),
-
-    // fallback geral
     ctx.locator('input[type="text"]:visible'),
     ctx.locator('input:not([type]):visible'),
   ].filter(Boolean);
@@ -116,7 +104,6 @@ async function fillLoginFields(ctx, user, pass) {
     }
   }
 
-  // Senha: normalmente é input[type=password]
   const passCandidates = [
     ctx.getByLabel?.(/Senha externa/i),
     ctx.getByLabel?.(/Senha/i),
@@ -167,7 +154,6 @@ async function run() {
   const CIEM_USER = mustEnv('CIEM_USER');
   const CIEM_PASS = mustEnv('CIEM_PASS');
 
-  // valida configs de e-mail cedo
   mustEnv('GMAIL_USER');
   mustEnv('GMAIL_APP_PASSWORD');
   mustEnv('EMAIL_TO');
@@ -186,7 +172,7 @@ async function run() {
   const page = await context.newPage();
 
   try {
-    // 1) Access CIEMSub (página inicial que contém o link "(Legado) Usuário externo")
+    // 1) Access CIEMSub
     await page.goto(CIEM_URL, { waitUntil: 'domcontentloaded', timeout: 120_000 });
 
     // 2) Click '(Legado) Usuário externo'
@@ -194,10 +180,9 @@ async function run() {
       .getByRole('link', { name: /\(Legado\)\s*Usuário externo/i })
       .click({ timeout: 60_000 });
 
-    // Dá tempo para renderizar a tela/iframe de login
     await page.waitForTimeout(1_000);
 
-    // 3-4) Descobre onde o login apareceu (page ou iframe) e preenche usuário/senha
+    // 3-4) Preenche usuário/senha
     const loginCtxInfo = await getLoginContext(page);
     if (loginCtxInfo.kind === 'not_found') {
       await saveDebugSnapshot(page, outDir, 'debug-login-context-not-found');
@@ -210,7 +195,7 @@ async function run() {
       throw new Error(`Falha ao localizar campos de login (user=${filledUser}, pass=${filledPass}).`);
     }
 
-    // 5) Entrar (link ou botão)
+    // 5) Entrar
     const clickedEntrar = await clickFirstThatExists(
       [
         page.getByRole('link', { name: /Entrar/i }),
@@ -227,28 +212,21 @@ async function run() {
       throw new Error('Não encontrei o "Entrar" (link/botão).');
     }
 
-    // Pós-login
     await page.waitForLoadState('networkidle', { timeout: 120_000 });
 
-    // 1) Localiza o <li class="treeview"> que contém "Cronograma"
+    // 6) Expandir Cronograma (treeview AdminLTE)
     const cronogramaTree = page.locator('ul.sidebar-menu li.treeview', {
       has: page.locator('span', { hasText: /Cronograma/i }),
     });
 
-    // 2) O toggle real é <a href="#">
     const cronogramaToggle = cronogramaTree.locator('> a[href="#"]').first();
-
-    // 3) Submenu colapsável
     const cronogramaMenu = cronogramaTree.locator('ul.treeview-menu').first();
 
-    // 4) Expande se estiver colapsado
     if (!(await cronogramaMenu.isVisible().catch(() => false))) {
-      await cronogramaToggle.scrollIntoViewIfNeeded();
       await cronogramaToggle.click({ timeout: 60_000 });
       await page.waitForTimeout(400);
     }
 
-    // 5) Se ainda estiver hidden, força via DOM (fallback)
     if (!(await cronogramaMenu.isVisible().catch(() => false))) {
       await cronogramaTree.evaluate((li) => {
         li.classList.add('active');
@@ -260,35 +238,54 @@ async function run() {
 
     await cronogramaMenu.waitFor({ state: 'visible', timeout: 30_000 });
 
-    // 6) Clica em "Visão Serviço" pelo href (/Scheduler)
+    // 7) Clica em "Visão Serviço" (sem scroll, direto)
     const visaoServico = cronogramaMenu.locator('a[href="/Scheduler"]').first();
-
-    // Valida que está visível (sem esperar estabilidade infinita)
     await visaoServico.waitFor({ state: 'visible', timeout: 15_000 });
 
-    // Clica direto (sem scroll, já que está visível)
-    await visaoServico.click({ timeout: 60_000, force: true });
+    try {
+      await visaoServico.click({ timeout: 30_000, force: true });
+    } catch {
+      // Fallback: navega via JS
+      await page.evaluate(() => {
+        const link = document.querySelector('a[href="/Scheduler"]');
+        if (link) link.click();
+      });
+    }
 
-    // 8) Wait loading process (15sec)
+    await page.waitForLoadState('networkidle', { timeout: 120_000 });
+
+    // 8) Wait loading (15s)
     await page.waitForTimeout(15_000);
 
-    // 9) Screenshot
+    // 9) Screenshot visão serviço
     await page.screenshot({ path: screenshotVisao, fullPage: true });
 
-    // 10) Hit the link "Monitoramento" e aguarda nova janela
+    // 10) Clica em "Monitoramento" (nova janela)
+    const monitoringLink = page.getByRole('link', { name: /Monitoramento/i }).first();
+    await monitoringLink.waitFor({ state: 'visible', timeout: 15_000 });
+
     const [monitorPage] = await Promise.all([
       context.waitForEvent('page', { timeout: 60_000 }),
-      page.getByRole('link', { name: /Monitoramento/i }).click({ timeout: 60_000 }),
+      (() => {
+        try {
+          return monitoringLink.click({ timeout: 30_000, force: true });
+        } catch {
+          return page.evaluate(() => {
+            const link = document.querySelector('a[aria-label*="Monitoramento" i], a:has-text("Monitoramento")');
+            if (link) link.click();
+          });
+        }
+      })(),
     ]);
 
-    // 11) Wait new window
+    // 11) Aguarda nova janela
     await monitorPage.waitForLoadState('domcontentloaded', { timeout: 120_000 });
     await monitorPage.waitForTimeout(3_000);
 
     // 12) Screenshot monitoramento
     await monitorPage.screenshot({ path: screenshotMon, fullPage: true });
 
-    // 13) Envia e-mail (SMTP)
+    // 13) Envia e-mail
     const subject = `Relatório CIEMSub - ${new Date().toLocaleString('pt-BR')}`;
     const text = `Segue o relatório CIEMSub.\n\nAnexos:\n- visão serviço\n- monitoramento\n`;
 
