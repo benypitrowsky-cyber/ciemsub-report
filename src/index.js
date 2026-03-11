@@ -214,44 +214,20 @@ async function run() {
 
     await page.waitForLoadState('networkidle', { timeout: 120_000 });
 
-    // 6) Expandir Cronograma (4º elemento: li.treeview:nth-child(4))
-    const cronogramaToggle = page.locator('ul.sidebar-menu li.treeview:nth-child(4) > a[href="#"]').first();
-    const cronogramaMenu = page.locator('ul.sidebar-menu li.treeview:nth-child(4) ul.treeview-menu').first();
+    // 6) Expandir Cronograma (treeview AdminLTE)
+    const cronogramaItem = page.locator('li.treeview:has(span:text("Cronograma"))').first();
+    const cronogramaToggle = cronogramaItem.locator('> a[href="#"]').first();
+    const cronogramaMenu = cronogramaItem.locator('> ul.treeview-menu').first();
 
-    // Clica para expandir
-    if (await cronogramaToggle.count()) {
-      await cronogramaToggle.click({ timeout: 60_000 });
-      await page.waitForTimeout(400);
-    }
-
-    // Fallback: força expansão via DOM se ainda estiver hidden
+    // Clica para expandir (se não estiver já)
     if (!(await cronogramaMenu.isVisible().catch(() => false))) {
-      await page.evaluate(() => {
-        const li = document.querySelectorAll('ul.sidebar-menu li.treeview')[3]; // 4º elemento (índice 3)
-        if (li) {
-          li.classList.add('active');
-          const menu = li.querySelector('ul.treeview-menu');
-          if (menu) menu.style.display = 'block';
-        }
-      });
-      await page.waitForTimeout(200);
+      await cronogramaToggle.click({ timeout: 30_000 });
+      await page.waitForTimeout(300);
     }
 
-    await cronogramaMenu.waitFor({ state: 'visible', timeout: 30_000 });
-
-    // 7) Clica em "Visão Serviço" (sem scroll, direto)
-    const visaoServico = cronogramaMenu.locator('a[href="/Scheduler"]').first();
-    await visaoServico.waitFor({ state: 'visible', timeout: 15_000 });
-
-    try {
-      await visaoServico.click({ timeout: 30_000, force: true });
-    } catch {
-      // Fallback: navega via JS
-      await page.evaluate(() => {
-        const link = document.querySelector('a[href="/Scheduler"]');
-        if (link) link.click();
-      });
-    }
+    // 7) Clica em "Visão Serviço"
+    const visaoServico = page.locator('a[href="/Scheduler"]').first();
+    await visaoServico.click({ timeout: 30_000, force: true });
 
     await page.waitForLoadState('networkidle', { timeout: 120_000 });
 
