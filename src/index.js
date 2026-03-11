@@ -230,17 +230,33 @@ async function run() {
     // Pós-login
     await page.waitForLoadState('networkidle', { timeout: 120_000 });
 
-    // 6) Hit the Menu (left options), dropdown (pode já estar aberto)
+    // 6) Open left section "Cronograma" (if needed), then click "visão serviço"
+    await page.waitForTimeout(1_000);
+
+    // Try to click Cronograma (it might be a link or a button)
     await clickFirstThatExists(
-      [
-        page.getByRole('button', { name: /Cronograma/i }),
-        page.getByLabel(/Cronograma/i),
-        page.locator('[aria-label*="Cronograma" i]'),
-        page.locator('button:has-text("Cronograma")'),
-      ],
-      { timeout: 20_000 }
+     [
+      page.getByRole('link', { name: /Cronograma/i }),
+      page.getByRole('button', { name: /Cronograma/i }),
+      page.locator('a:has-text("Cronograma")'),
+      page.locator('button:has-text("Cronograma")'),
+     ],
+     { timeout: 30_000 }
     );
 
+    // Small wait for the submenu to expand/animate
+    await page.waitForTimeout(800);
+
+    // Now click "visão serviço" reliably
+    const visao = page.getByRole('link', { name: /visão serviço/i });
+
+    // Ensure it becomes visible; if it’s in a scrollable left panel, scroll into view
+    await visao.first().scrollIntoViewIfNeeded({ timeout: 30_000 });
+    await visao.first().waitFor({ state: 'visible', timeout: 30_000 });
+
+    // Click; if the UI is overlaying, force can be used as last resort
+    await visao.first().click({ timeout: 60_000 });
+    
     // 7) Hit link "visão serviço"
     await page.getByRole('link', { name: /visão serviço/i }).click({ timeout: 60_000 });
 
