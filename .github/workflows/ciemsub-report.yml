@@ -9,6 +9,10 @@ jobs:
   run-report:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+     PWDEBUG: "0"
+     PLAYWRIGHT_BROWSERS_PATH: "0"
+     DEBUG: "pw:api"
 
     steps:
       - name: Checkout
