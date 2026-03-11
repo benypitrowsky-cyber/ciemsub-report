@@ -215,7 +215,6 @@ async function run() {
     await page.waitForLoadState('networkidle', { timeout: 120_000 });
 
     // 6) Expandir Cronograma (posição + nome)
-    // Localiza todos os li.treeview, depois filtra pelo que contém "Cronograma"
     const allTreeviews = page.locator('ul.sidebar-menu > li.treeview');
     const cronogramaItem = allTreeviews.filter({
       has: page.locator('span:has-text("Cronograma")'),
@@ -234,7 +233,7 @@ async function run() {
     if (!(await cronogramaMenu.isVisible().catch(() => false))) {
       await cronogramaItem.evaluate((li) => {
         li.classList.add('active');
-        const menu = li.querySelector('> ul.treeview-menu');
+        const menu = li.querySelector('ul.treeview-menu');
         if (menu) {
           menu.style.display = 'block';
           menu.style.visibility = 'visible';
@@ -253,8 +252,6 @@ async function run() {
     // 7) Clica em "Visão Serviço"
     const visaoServico = cronogramaMenu.locator('a[href="/Scheduler"]').first();
     await visaoServico.waitFor({ state: 'visible', timeout: 15_000 });
-
-    // Clica direto (sem fallback)
     await visaoServico.click({ timeout: 30_000, force: true });
 
     // Aguarda a página carregar
@@ -272,16 +269,7 @@ async function run() {
 
     const [monitorPage] = await Promise.all([
       context.waitForEvent('page', { timeout: 60_000 }),
-      (() => {
-        try {
-          return monitoringLink.click({ timeout: 30_000, force: true });
-        } catch {
-          return page.evaluate(() => {
-            const link = document.querySelector('a[href="/Monitoring"]');
-            if (link) link.click();
-          });
-        }
-      })(),
+      monitoringLink.click({ timeout: 30_000, force: true }),
     ]);
 
     // 11) Aguarda nova janela
@@ -300,6 +288,8 @@ async function run() {
       text,
       attachments: [screenshotVisao, screenshotMon],
     });
+
+    console.log('✅ Relatório enviado com sucesso!');
   } catch (err) {
     await saveDebugSnapshot(page, outDir, 'debug-failure');
     throw err;
