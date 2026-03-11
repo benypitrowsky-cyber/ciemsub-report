@@ -255,15 +255,28 @@ async function run() {
     await visaoServico.waitFor({ state: 'visible', timeout: 15_000 });
 
     try {
-      await visaoServico.click({ timeout: 30_000, force: true });
-    } catch {
-      await page.evaluate(() => {
-        const link = document.querySelector('a[href="/Scheduler"]');
-        if (link) link.click();
-      });
+      // Clica SEM esperar navegação (timeout curto)
+      await visaoServico.click({ timeout: 5_000, force: true });
+  
+      // Aguarda a página carregar (com timeout menor)
+      await page.waitForLoadState('networkidle', { timeout: 30_000 }).catch(() => {});
+  
+      // Se chegou aqui, tudo bem; se não, continua mesmo assim
+    } catch (err) {
+      console.log('Clique em Visão Serviço falhou, tentando fallback...');
+  
+    // Fallback: tenta navegar direto via URL
+      try {
+        await page.goto('/Scheduler', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+      } catch {
+        // Se tudo falhar, tira screenshot do erro e relança
+        await saveDebugSnapshot(page, outDir, 'debug-visao-servico-error');
+        throw new Error('Falha ao acessar Visão Serviço (clique + fallback URL).');
+      }
     }
 
-    await page.waitForLoadState('networkidle', { timeout: 120_000 });
+    // Aguarda um pouco para a página estabilizar
+    await page.waitForTimeout(2_000);
 
     // 8) Wait loading (15s)
     await page.waitForTimeout(15_000);
