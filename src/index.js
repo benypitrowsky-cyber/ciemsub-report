@@ -230,35 +230,19 @@ async function run() {
     // Pós-login
     await page.waitForLoadState('networkidle', { timeout: 120_000 });
 
-    // 6) Open left section "Cronograma" (if needed), then click "visão serviço"
-    await page.waitForTimeout(1_000);
+    // 6) Expandir "Cronograma" (treeview) se estiver colapsado
+    const cronograma = page.getByRole('link', { name: /^Cronograma$/i });
 
-    // Try to click Cronograma (it might be a link or a button)
-    await clickFirstThatExists(
-     [
-      page.getByRole('link', { name: /Cronograma/i }),
-      page.getByRole('button', { name: /Cronograma/i }),
-      page.locator('a:has-text("Cronograma")'),
-      page.locator('button:has-text("Cronograma")'),
-     ],
-     { timeout: 30_000 }
-    );
+    // Clica no Cronograma (geralmente <a href="#"> dentro do li.treeview)
+    await cronograma.click({ timeout: 60_000 });
 
-    // Small wait for the submenu to expand/animate
-    await page.waitForTimeout(800);
+    // Espera o submenu do treeview ficar visível (display != none)
+    const visaoByHref = page.locator('a[href="/Scheduler"]');
 
-    // Now click "visão serviço" reliably
-    const visao = page.getByRole('link', { name: /visão serviço/i });
+    await visaoByHref.first().waitFor({ state: 'visible', timeout: 30_000 });
 
-    // Ensure it becomes visible; if it’s in a scrollable left panel, scroll into view
-    await visao.first().scrollIntoViewIfNeeded({ timeout: 30_000 });
-    await visao.first().waitFor({ state: 'visible', timeout: 30_000 });
-
-    // Click; if the UI is overlaying, force can be used as last resort
-    await visao.first().click({ timeout: 60_000 });
-    
-    // 7) Hit link "visão serviço"
-    await page.getByRole('link', { name: /visão serviço/i }).click({ timeout: 60_000 });
+    // 7) Agora clica em "Visão Serviço"
+    await visaoByHref.first().click({ timeout: 60_000 });
 
     // 8) Wait loading process (15sec)
     await page.waitForTimeout(15_000);
