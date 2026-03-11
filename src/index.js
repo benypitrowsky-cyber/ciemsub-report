@@ -233,10 +233,10 @@ async function run() {
     // 6) Hit the Menu (left options), dropdown (pode já estar aberto)
     await clickFirstThatExists(
       [
-        page.getByRole('button', { name: /menu/i }),
-        page.getByLabel(/menu/i),
-        page.locator('[aria-label*="menu" i]'),
-        page.locator('button:has-text("Menu")'),
+        page.getByRole('button', { name: /Cronograma/i }),
+        page.getByLabel(/Cronograma/i),
+        page.locator('[aria-label*="Cronograma" i]'),
+        page.locator('button:has-text("Cronograma")'),
       ],
       { timeout: 20_000 }
     );
