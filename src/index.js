@@ -48,6 +48,100 @@ async function fillFirstThatExists(locators, value, options = {}) {
   return false;
 }
 
+async function getLoginContext(page) {
+  const deadline = Date.now() + 30_000;
+
+  while (Date.now() < deadline) {
+    // 1) Tentativa direta na página
+    const hasTextInputs =
+      (await page.locator('input[type="text"]:visible,input:not([type]):visible').count()) > 0;
+    const hasPasswordInputs = (await page.locator('input[type="password"]:visible').count()) > 0;
+
+    if (hasTextInputs && hasPasswordInputs) return { kind: 'page', ctx: page };
+
+    // 2) Tentativa em iframes
+    for (const frame of page.frames()) {
+      try {
+        const userCount = await frame
+          .locator('input[type="text"]:visible,input:not([type]):visible')
+          .count();
+        const passCount = await frame.locator('input[type="password"]:visible').count();
+        if (userCount > 0 && passCount > 0) return { kind: 'frame', ctx: frame };
+      } catch {
+        // ignora frames não prontos
+      }
+    }
+
+    await page.waitForTimeout(500);
+  }
+
+  return { kind: 'not_found', ctx: page };
+}
+
+async function fillLoginFields(ctx, user, pass) {
+  // Usuário: candidates comuns + heurística final
+  const userLocators = [
+    // por label/placeholder (quando existe)
+    ctx.getByLabel?.(/Usuário/i),
+    ctx.getByPlaceholder?.(/Usuário/i),
+
+    // por aria
+    ctx.locator('input[aria-label*="Usu" i]'),
+
+    // por name/id comuns
+    ctx.locator('input[name="usuario"]'),
+    ctx.locator('input[id="usuario"]'),
+    ctx.locator('input[name="user"]'),
+    ctx.locator('input[id="user"]'),
+    ctx.locator('input[name="username"]'),
+    ctx.locator('input[id="username"]'),
+    ctx.locator('input[name="login"]'),
+    ctx.locator('input[id="login"]'),
+
+    // heurística: primeiro campo texto do form
+    ctx.locator('form input[type="text"]:visible'),
+    ctx.locator('form input:not([type]):visible'),
+
+    // fallback geral
+    ctx.locator('input[type="text"]:visible'),
+    ctx.locator('input:not([type]):visible'),
+  ].filter(Boolean);
+
+  let filledUser = false;
+  for (const l of userLocators) {
+    if (await l.count()) {
+      await l.first().fill(user);
+      filledUser = true;
+      break;
+    }
+  }
+
+  // Senha: normalmente é input[type=password]
+  const passCandidates = [
+    ctx.getByLabel?.(/Senha externa/i),
+    ctx.getByLabel?.(/Senha/i),
+    ctx.getByPlaceholder?.(/Senha/i),
+    ctx.locator('input[aria-label*="Senha" i]'),
+    ctx.locator('input[name="senha"]'),
+    ctx.locator('input[id="senha"]'),
+    ctx.locator('input[name="password"]'),
+    ctx.locator('input[id="password"]'),
+    ctx.locator('form input[type="password"]:visible'),
+    ctx.locator('input[type="password"]:visible'),
+  ].filter(Boolean);
+
+  let filledPass = false;
+  for (const p of passCandidates) {
+    if (await p.count()) {
+      await p.first().fill(pass);
+      filledPass = true;
+      break;
+    }
+  }
+
+  return { filledUser, filledPass };
+}
+
 async function sendEmailWithAttachments({ subject, text, attachments }) {
   const transporter = nodemailer.createTransport({
     service: 'gmail',
@@ -72,6 +166,10 @@ async function sendEmailWithAttachments({ subject, text, attachments }) {
 async function run() {
   const CIEM_USER = mustEnv('CIEM_USER');
   const CIEM_PASS = mustEnv('CIEM_PASS');
+
+  // valida configs de e-mail cedo
+  mustEnv('GMAIL_USER');
+  mustEnv('GMAIL_APP_PASSWORD');
   mustEnv('EMAIL_TO');
 
   const outDir = path.resolve('output');
@@ -82,70 +180,37 @@ async function run() {
   const screenshotMon = path.join(outDir, `ciemsub-monitoramento-${ts}.png`);
 
   const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 900 },
+  });
   const page = await context.newPage();
 
   try {
-    // Login page
+    // 1) Access CIEMSub (página inicial que contém o link "(Legado) Usuário externo")
     await page.goto(CIEM_URL, { waitUntil: 'domcontentloaded', timeout: 120_000 });
 
-    // Click "(Legado) Usuário externo"
-    await page.getByRole('link', { name: /\(Legado\)\s*Usuário externo/i }).click({ timeout: 60_000 });
+    // 2) Click '(Legado) Usuário externo'
+    await page
+      .getByRole('link', { name: /\(Legado\)\s*Usuário externo/i })
+      .click({ timeout: 60_000 });
 
-    // Pequena folga para renderizar/alterar DOM
+    // Dá tempo para renderizar a tela/iframe de login
     await page.waitForTimeout(1_000);
 
-    // Preenche Usuário (fallbacks)
-    const userFilled = await fillFirstThatExists(
-      [
-        // 1) label (se existir)
-        page.getByLabel(/Usuário/i),
-        // 2) placeholder / aria-label
-        page.getByPlaceholder(/Usuário/i),
-        page.locator('input[aria-label*="Usu" i]'),
-        // 3) name/id comuns
-        page.locator('input[name="usuario"]'),
-        page.locator('input[name="user"]'),
-        page.locator('input[name="username"]'),
-        page.locator('input[id="usuario"]'),
-        page.locator('input[id="user"]'),
-        page.locator('input[id="username"]'),
-        // 4) heurística: primeiro input de texto visível do form
-        page.locator('form input[type="text"]:visible'),
-        page.locator('form input:not([type]):visible'),
-      ],
-      CIEM_USER,
-      { timeout: 20_000 }
-    );
-
-    if (!userFilled) {
-      await saveDebugSnapshot(page, outDir, 'debug-login-user-not-found');
-      throw new Error('Não encontrei o campo de Usuário (nenhum seletor bateu).');
+    // 3-4) Descobre onde o login apareceu (page ou iframe) e preenche usuário/senha
+    const loginCtxInfo = await getLoginContext(page);
+    if (loginCtxInfo.kind === 'not_found') {
+      await saveDebugSnapshot(page, outDir, 'debug-login-context-not-found');
+      throw new Error('Campos de login não apareceram após clicar em "(Legado) Usuário externo".');
     }
 
-    // Preenche Senha externa (fallbacks)
-    const passFilled = await fillFirstThatExists(
-      [
-        page.getByLabel(/Senha externa/i),
-        page.getByLabel(/Senha/i),
-        page.getByPlaceholder(/Senha/i),
-        page.locator('input[aria-label*="Senha" i]'),
-        page.locator('input[name="senha"]'),
-        page.locator('input[name="password"]'),
-        page.locator('input[id="senha"]'),
-        page.locator('input[id="password"]'),
-        page.locator('form input[type="password"]:visible'),
-      ],
-      CIEM_PASS,
-      { timeout: 20_000 }
-    );
-
-    if (!passFilled) {
-      await saveDebugSnapshot(page, outDir, 'debug-login-pass-not-found');
-      throw new Error('Não encontrei o campo de Senha (nenhum seletor bateu).');
+    const { filledUser, filledPass } = await fillLoginFields(loginCtxInfo.ctx, CIEM_USER, CIEM_PASS);
+    if (!filledUser || !filledPass) {
+      await saveDebugSnapshot(page, outDir, 'debug-login-fields-not-found');
+      throw new Error(`Falha ao localizar campos de login (user=${filledUser}, pass=${filledPass}).`);
     }
 
-    // Entrar (link/botão)
+    // 5) Entrar (link ou botão)
     const clickedEntrar = await clickFirstThatExists(
       [
         page.getByRole('link', { name: /Entrar/i }),
@@ -165,7 +230,7 @@ async function run() {
     // Pós-login
     await page.waitForLoadState('networkidle', { timeout: 120_000 });
 
-    // Menu (se existir)
+    // 6) Hit the Menu (left options), dropdown (pode já estar aberto)
     await clickFirstThatExists(
       [
         page.getByRole('button', { name: /menu/i }),
@@ -176,28 +241,29 @@ async function run() {
       { timeout: 20_000 }
     );
 
-    // Visão serviço
+    // 7) Hit link "visão serviço"
     await page.getByRole('link', { name: /visão serviço/i }).click({ timeout: 60_000 });
 
-    // Espera “15s” do seu procedimento
+    // 8) Wait loading process (15sec)
     await page.waitForTimeout(15_000);
 
-    // Screenshot 1
+    // 9) Screenshot
     await page.screenshot({ path: screenshotVisao, fullPage: true });
 
-    // Monitoramento (nova janela)
+    // 10) Hit the link "Monitoramento" e aguarda nova janela
     const [monitorPage] = await Promise.all([
       context.waitForEvent('page', { timeout: 60_000 }),
       page.getByRole('link', { name: /Monitoramento/i }).click({ timeout: 60_000 }),
     ]);
 
+    // 11) Wait new window
     await monitorPage.waitForLoadState('domcontentloaded', { timeout: 120_000 });
     await monitorPage.waitForTimeout(3_000);
 
-    // Screenshot 2
+    // 12) Screenshot monitoramento
     await monitorPage.screenshot({ path: screenshotMon, fullPage: true });
 
-    // Email
+    // 13) Envia e-mail (SMTP)
     const subject = `Relatório CIEMSub - ${new Date().toLocaleString('pt-BR')}`;
     const text = `Segue o relatório CIEMSub.\n\nAnexos:\n- visão serviço\n- monitoramento\n`;
 
@@ -207,7 +273,6 @@ async function run() {
       attachments: [screenshotVisao, screenshotMon],
     });
   } catch (err) {
-    // Debug final (se algo estourar fora do login)
     await saveDebugSnapshot(page, outDir, 'debug-failure');
     throw err;
   } finally {
