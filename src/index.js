@@ -262,7 +262,11 @@ async function run() {
 
     // 6) Clica em "Visão Serviço" pelo href (/Scheduler)
     const visaoServico = cronogramaMenu.locator('a[href="/Scheduler"]').first();
-    await visaoServico.scrollIntoViewIfNeeded();
+
+    // Valida que está visível (sem esperar estabilidade infinita)
+    await visaoServico.waitFor({ state: 'visible', timeout: 15_000 });
+
+    // Clica direto (sem scroll, já que está visível)
     await visaoServico.click({ timeout: 60_000, force: true });
 
     // 8) Wait loading process (15sec)
