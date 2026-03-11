@@ -214,20 +214,54 @@ async function run() {
 
     await page.waitForLoadState('networkidle', { timeout: 120_000 });
 
-    // 6) Expandir Cronograma (treeview AdminLTE)
-    const cronogramaItem = page.locator('li.treeview:has(span:text("Cronograma"))').first();
+    // 6) Expandir Cronograma (posição + nome)
+    // Localiza todos os li.treeview, depois filtra pelo que contém "Cronograma"
+    const allTreeviews = page.locator('ul.sidebar-menu > li.treeview');
+    const cronogramaItem = allTreeviews.filter({
+      has: page.locator('span:has-text("Cronograma")'),
+    }).first();
+
     const cronogramaToggle = cronogramaItem.locator('> a[href="#"]').first();
     const cronogramaMenu = cronogramaItem.locator('> ul.treeview-menu').first();
 
-    // Clica para expandir (se não estiver já)
+    // Tenta expandir via clique
     if (!(await cronogramaMenu.isVisible().catch(() => false))) {
-      await cronogramaToggle.click({ timeout: 30_000 });
+      await cronogramaToggle.click({ timeout: 30_000 }).catch(() => {});
+      await page.waitForTimeout(400);
+    }
+
+    // Fallback: força expansão via DOM
+    if (!(await cronogramaMenu.isVisible().catch(() => false))) {
+      await cronogramaItem.evaluate((li) => {
+        li.classList.add('active');
+        const menu = li.querySelector('> ul.treeview-menu');
+        if (menu) {
+          menu.style.display = 'block';
+          menu.style.visibility = 'visible';
+        }
+      });
       await page.waitForTimeout(300);
     }
 
+    // Valida que expandiu
+    const isExpanded = await cronogramaMenu.isVisible().catch(() => false);
+    if (!isExpanded) {
+      await saveDebugSnapshot(page, outDir, 'debug-cronograma-not-expanded');
+      throw new Error('Cronograma não expandiu após clique + fallback DOM.');
+    }
+
     // 7) Clica em "Visão Serviço"
-    const visaoServico = page.locator('a[href="/Scheduler"]').first();
-    await visaoServico.click({ timeout: 30_000, force: true });
+    const visaoServico = cronogramaMenu.locator('a[href="/Scheduler"]').first();
+    await visaoServico.waitFor({ state: 'visible', timeout: 15_000 });
+
+    try {
+      await visaoServico.click({ timeout: 30_000, force: true });
+    } catch {
+      await page.evaluate(() => {
+        const link = document.querySelector('a[href="/Scheduler"]');
+        if (link) link.click();
+      });
+    }
 
     await page.waitForLoadState('networkidle', { timeout: 120_000 });
 
@@ -243,12 +277,12 @@ async function run() {
 
     const [monitorPage] = await Promise.all([
       context.waitForEvent('page', { timeout: 60_000 }),
-      (async () => {
+      (() => {
         try {
-          await monitoringLink.click({ timeout: 30_000, force: true });
+          return monitoringLink.click({ timeout: 30_000, force: true });
         } catch {
-          await page.evaluate(() => {
-            const link = document.querySelector('a[aria-label*="Monitoramento" i], a:has-text("Monitoramento")');
+          return page.evaluate(() => {
+            const link = document.querySelector('a[href="/Monitoring"]');
             if (link) link.click();
           });
         }
