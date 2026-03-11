@@ -1,0 +1,45 @@
+name: CIEMSub - Email Report
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 10 * * *" # 10:00 UTC (ajuste)
+
+jobs:
+  run-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run report
+        env:
+          CIEM_USER: ${{ secrets.CIEM_USER }}
+          CIEM_PASS: ${{ secrets.CIEM_PASS }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+        run: npm run start
+
+      - name: Upload screenshots (artifact)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ciemsub-screenshots
+          path: output
+          if-no-files-found: warn
+          retention-days: 14
