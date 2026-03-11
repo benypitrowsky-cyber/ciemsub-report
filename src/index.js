@@ -214,24 +214,25 @@ async function run() {
 
     await page.waitForLoadState('networkidle', { timeout: 120_000 });
 
-    // 6) Expandir Cronograma (treeview AdminLTE)
-    const cronogramaTree = page.locator('ul.sidebar-menu li.treeview', {
-      has: page.locator('span', { hasText: /Cronograma/i }),
-    });
+    // 6) Expandir Cronograma (4º elemento: li.treeview:nth-child(4))
+    const cronogramaToggle = page.locator('ul.sidebar-menu li.treeview:nth-child(4) > a[href="#"]').first();
+    const cronogramaMenu = page.locator('ul.sidebar-menu li.treeview:nth-child(4) ul.treeview-menu').first();
 
-    const cronogramaToggle = cronogramaTree.locator('> a[href="#"]').first();
-    const cronogramaMenu = cronogramaTree.locator('ul.treeview-menu').first();
-
-    if (!(await cronogramaMenu.isVisible().catch(() => false))) {
+    // Clica para expandir
+    if (await cronogramaToggle.count()) {
       await cronogramaToggle.click({ timeout: 60_000 });
       await page.waitForTimeout(400);
     }
 
+    // Fallback: força expansão via DOM se ainda estiver hidden
     if (!(await cronogramaMenu.isVisible().catch(() => false))) {
-      await cronogramaTree.evaluate((li) => {
-        li.classList.add('active');
-        const menu = li.querySelector('ul.treeview-menu');
-        if (menu) menu.style.display = 'block';
+      await page.evaluate(() => {
+        const li = document.querySelectorAll('ul.sidebar-menu li.treeview')[3]; // 4º elemento (índice 3)
+        if (li) {
+          li.classList.add('active');
+          const menu = li.querySelector('ul.treeview-menu');
+          if (menu) menu.style.display = 'block';
+        }
       });
       await page.waitForTimeout(200);
     }
@@ -266,11 +267,11 @@ async function run() {
 
     const [monitorPage] = await Promise.all([
       context.waitForEvent('page', { timeout: 60_000 }),
-      (() => {
+      (async () => {
         try {
-          return monitoringLink.click({ timeout: 30_000, force: true });
+          await monitoringLink.click({ timeout: 30_000, force: true });
         } catch {
-          return page.evaluate(() => {
+          await page.evaluate(() => {
             const link = document.querySelector('a[aria-label*="Monitoramento" i], a:has-text("Monitoramento")');
             if (link) link.click();
           });
