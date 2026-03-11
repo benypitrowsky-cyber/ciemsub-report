@@ -230,16 +230,27 @@ async function run() {
     // Pós-login
     await page.waitForLoadState('networkidle', { timeout: 120_000 });
 
-    // 6) Expandir "Cronograma" (treeview) se estiver colapsado
-    const cronograma = page.getByRole('link', { name: /^Cronograma$/i });
+    // Localiza o <li class="treeview"> que contém o texto "Cronograma"
+    const cronogramaTree = page.locator('ul.sidebar-menu li.treeview', {
+      has: page.locator('span', { hasText: /Cronograma/i }),
+    });
 
-    // Clica no Cronograma (geralmente <a href="#"> dentro do li.treeview)
-    await cronograma.click({ timeout: 60_000 });
+    // O link clicável do pai (geralmente <a href="#">)
+    const cronogramaToggle = cronogramaTree.locator('> a').first();
 
-    // Espera o submenu do treeview ficar visível (display != none)
-    const visaoByHref = page.locator('a[href="/Scheduler"]');
+    // Submenu do treeview
+    const cronogramaMenu = cronogramaTree.locator('ul.treeview-menu').first();
 
-    await visaoByHref.first().waitFor({ state: 'visible', timeout: 30_000 });
+    // Expande somente se o submenu ainda não estiver visível
+    if (!(await cronogramaMenu.isVisible().catch(() => false))) {
+      await cronogramaToggle.click({ timeout: 60_000 });
+      await cronogramaMenu.waitFor({ state: 'visible', timeout: 30_000 });
+    }
+
+    // Agora "Visão Serviço" deve ficar visível dentro do submenu
+    const visaoServico = cronogramaMenu.locator('a[href="/Scheduler"]').first();
+    await visaoServico.waitFor({ state: 'visible', timeout: 30_000 });
+    await visaoServico.click({ timeout: 60_000 });
 
     // 7) Agora clica em "Visão Serviço"
     await visaoByHref.first().click({ timeout: 60_000 });
