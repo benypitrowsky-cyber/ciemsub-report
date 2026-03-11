@@ -230,30 +230,40 @@ async function run() {
     // Pós-login
     await page.waitForLoadState('networkidle', { timeout: 120_000 });
 
-    // Localiza o <li class="treeview"> que contém o texto "Cronograma"
+    // 1) Localiza o <li class="treeview"> que contém "Cronograma"
     const cronogramaTree = page.locator('ul.sidebar-menu li.treeview', {
       has: page.locator('span', { hasText: /Cronograma/i }),
     });
 
-    // O link clicável do pai (geralmente <a href="#">)
-    const cronogramaToggle = cronogramaTree.locator('> a').first();
+    // 2) O toggle real é <a href="#">
+    const cronogramaToggle = cronogramaTree.locator('> a[href="#"]').first();
 
-    // Submenu do treeview
+    // 3) Submenu colapsável
     const cronogramaMenu = cronogramaTree.locator('ul.treeview-menu').first();
 
-    // Expande somente se o submenu ainda não estiver visível
+    // 4) Expande se estiver colapsado
     if (!(await cronogramaMenu.isVisible().catch(() => false))) {
+      await cronogramaToggle.scrollIntoViewIfNeeded();
       await cronogramaToggle.click({ timeout: 60_000 });
-      await cronogramaMenu.waitFor({ state: 'visible', timeout: 30_000 });
+      await page.waitForTimeout(400);
     }
 
-    // Agora "Visão Serviço" deve ficar visível dentro do submenu
-    const visaoServico = cronogramaMenu.locator('a[href="/Scheduler"]').first();
-    await visaoServico.waitFor({ state: 'visible', timeout: 30_000 });
-    await visaoServico.click({ timeout: 60_000 });
+    // 5) Se ainda estiver hidden, força via DOM (fallback)
+    if (!(await cronogramaMenu.isVisible().catch(() => false))) {
+      await cronogramaTree.evaluate((li) => {
+        li.classList.add('active');
+        const menu = li.querySelector('ul.treeview-menu');
+        if (menu) menu.style.display = 'block';
+      });
+      await page.waitForTimeout(200);
+    }
 
-    // 7) Agora clica em "Visão Serviço"
-    await visaoByHref.first().click({ timeout: 60_000 });
+    await cronogramaMenu.waitFor({ state: 'visible', timeout: 30_000 });
+
+    // 6) Clica em "Visão Serviço" pelo href (/Scheduler)
+    const visaoServico = cronogramaMenu.locator('a[href="/Scheduler"]').first();
+    await visaoServico.scrollIntoViewIfNeeded();
+    await visaoServico.click({ timeout: 60_000, force: true });
 
     // 8) Wait loading process (15sec)
     await page.waitForTimeout(15_000);
