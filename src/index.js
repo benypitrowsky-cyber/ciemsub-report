@@ -258,7 +258,7 @@ async function run() {
     await page.waitForLoadState('networkidle', { timeout: 120_000 });
 
     // 8) Wait loading (15s)
-    await page.waitForTimeout(15_000);
+    await page.waitForTimeout(20_000);
 
     // 9) Screenshot visão serviço
     await page.screenshot({ path: screenshotVisao, fullPage: true });
@@ -274,7 +274,7 @@ async function run() {
 
     // 11) Aguarda nova janela
     await monitorPage.waitForLoadState('domcontentloaded', { timeout: 120_000 });
-    await monitorPage.waitForTimeout(3_000);
+    await monitorPage.waitForTimeout(10_000);
 
     // 12) Screenshot monitoramento
     await monitorPage.screenshot({ path: screenshotMon, fullPage: true });
