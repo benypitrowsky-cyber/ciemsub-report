@@ -3,8 +3,13 @@ name: CIEMSub - Email Report
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 10 * * *" # 10:00 UTC (ajuste)
-
+    # 7am São Paulo = 10am UTC
+    - cron: '0 10 * * *'
+    # 12pm São Paulo = 3pm UTC
+    - cron: '0 15 * * *'
+    # 6pm São Paulo = 9pm UTC
+    - cron: '0 21 * * *'
+  
 jobs:
   run-report:
     runs-on: ubuntu-latest
