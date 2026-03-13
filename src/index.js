@@ -214,48 +214,51 @@ async function run() {
 
     await page.waitForLoadState('networkidle', { timeout: 120_000 });
 
-    // 6) Expandir Cronograma (posição + nome)
-    const allTreeviews = page.locator('ul.sidebar-menu > li.treeview');
-    const cronogramaItem = allTreeviews.filter({
-      has: page.locator('span:has-text("Cronograma")'),
-    }).first();
+    // 6) Expandir Cronograma (com retry robusto)
+    let cronogramaExpanded = false;
+    let retries = 3;
 
-    const cronogramaToggle = cronogramaItem.locator('> a[href="#"]').first();
-    const cronogramaMenu = cronogramaItem.locator('> ul.treeview-menu').first();
+    while (!cronogramaExpanded && retries > 0) {
+      try {
+        const cronogramaItem = page.locator('li.treeview:has(span:has-text("Cronograma"))').first();
+        const cronogramaToggle = cronogramaItem.locator('> a[href="#"]').first();
+        const cronogramaMenu = cronogramaItem.locator('> ul.treeview-menu').first();
 
-    // Tenta expandir via clique
-    if (!(await cronogramaMenu.isVisible().catch(() => false))) {
-      await cronogramaToggle.click({ timeout: 30_000 }).catch(() => {});
-      await page.waitForTimeout(400);
-    }
+        // Tenta expandir via clique
+        await cronogramaToggle.click({ timeout: 10_000 }).catch(() => {});
+        await page.waitForTimeout(300);
 
-    // Fallback: força expansão via DOM
-    if (!(await cronogramaMenu.isVisible().catch(() => false))) {
-      await cronogramaItem.evaluate((li) => {
-        li.classList.add('active');
-        const menu = li.querySelector('ul.treeview-menu');
-        if (menu) {
-          menu.style.display = 'block';
-          menu.style.visibility = 'visible';
+        // Valida que expandiu
+        if (await cronogramaMenu.isVisible({ timeout: 5_000 }).catch(() => false)) {
+          cronogramaExpanded = true;
+          console.log('✅ Cronograma expandido com sucesso');
+        } else {
+          retries--;
+          if (retries > 0) {
+            console.log(`⚠️ Cronograma não expandiu, tentando novamente (${retries} tentativas restantes)...`);
+            await page.waitForTimeout(1_000);
+          }
         }
-      });
-      await page.waitForTimeout(300);
+      } catch (err) {
+        retries--;
+        if (retries > 0) {
+          console.log(`⚠️ Erro ao expandir Cronograma: ${err.message}. Tentando novamente...`);
+          await page.waitForTimeout(1_000);
+        }
+      }
     }
 
-    // Valida que expandiu
-    const isExpanded = await cronogramaMenu.isVisible().catch(() => false);
-    if (!isExpanded) {
-      await saveDebugSnapshot(page, outDir, 'debug-cronograma-not-expanded');
-      throw new Error('Cronograma não expandiu após clique + fallback DOM.');
+    if (!cronogramaExpanded) {
+      await saveDebugSnapshot(page, outDir, 'debug-cronograma-failed');
+      throw new Error('Cronograma não expandiu após 3 tentativas.');
     }
 
-    // 7) Clica em "Visão Serviço"
-    const visaoServico = cronogramaMenu.locator('a[href="/Scheduler"]').first();
-    await visaoServico.waitFor({ state: 'visible', timeout: 15_000 });
-    await visaoServico.click({ timeout: 30_000, force: true });
+// 7) Clica em "Visão Serviço"
+const visaoServico = page.locator('a[href="/Scheduler"]').first();
+await visaoServico.waitFor({ state: 'visible', timeout: 15_000 });
+await visaoServico.click({ timeout: 30_000, force: true });
 
-    // Aguarda a página carregar
-    await page.waitForLoadState('networkidle', { timeout: 120_000 });
+await page.waitForLoadState('networkidle', { timeout: 120_000 });
 
     // 8) Wait loading (15s)
     await page.waitForTimeout(20_000);
