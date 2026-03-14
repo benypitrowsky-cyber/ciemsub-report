@@ -214,56 +214,55 @@ async function run() {
 
     await page.waitForLoadState('networkidle', { timeout: 120_000 });
 
-    // 6) Expandir Cronograma (com retry robusto)
-    let cronogramaExpanded = false;
-    let retries = 3;
+    // 6) Expandir Cronograma (com validação)
+    console.log('📅 Procurando Cronograma...');
 
-    while (!cronogramaExpanded && retries > 0) {
-      try {
-        const cronogramaItem = page.locator('li.treeview:has(span:has-text("Cronograma"))').first();
-        const cronogramaToggle = cronogramaItem.locator('> a[href="#"]').first();
-        const cronogramaMenu = cronogramaItem.locator('> ul.treeview-menu').first();
-
-        // Tenta expandir via clique
-        await cronogramaToggle.click({ timeout: 10_000 }).catch(() => {});
-        await page.waitForTimeout(300);
-
-        // Valida que expandiu
-        if (await cronogramaMenu.isVisible({ timeout: 5_000 }).catch(() => false)) {
-          cronogramaExpanded = true;
-          console.log('✅ Cronograma expandido com sucesso');
-        } else {
-          retries--;
-          if (retries > 0) {
-            console.log(`⚠️ Cronograma não expandiu, tentando novamente (${retries} tentativas restantes)...`);
-            await page.waitForTimeout(1_000);
-          }
-        }
-      } catch (err) {
-        retries--;
-        if (retries > 0) {
-          console.log(`⚠️ Erro ao expandir Cronograma: ${err.message}. Tentando novamente...`);
-          await page.waitForTimeout(1_000);
-        }
-      }
+    // Valida se o elemento existe
+    const cronogramaExists = await page.locator('li.treeview:has(span:has-text("Cronograma"))').count();
+    if (cronogramaExists === 0) {
+      await saveDebugSnapshot(page, outDir, 'debug-cronograma-not-found');
+      throw new Error('Cronograma não encontrado na página. Estrutura HTML pode ter mudado.');
     }
 
-    if (!cronogramaExpanded) {
-      await saveDebugSnapshot(page, outDir, 'debug-cronograma-failed');
-      throw new Error('Cronograma não expandiu após 3 tentativas.');
+    const cronogramaItem = page.locator('li.treeview:has(span:has-text("Cronograma"))').first();
+    const cronogramaToggle = cronogramaItem.locator('> a[href="#"]').first();
+    const cronogramaMenu = cronogramaItem.locator('> ul.treeview-menu').first();
+
+    // Tenta expandir
+    await cronogramaToggle.click({ timeout: 10_000 }).catch(() => {});
+    await page.waitForTimeout(500);
+
+    // Valida expansão
+    const isExpanded = await cronogramaMenu.isVisible({ timeout: 5_000 }).catch(() => false);
+    if (!isExpanded) {
+      await saveDebugSnapshot(page, outDir, 'debug-cronograma-not-expanded');
+      throw new Error('Cronograma não expandiu após clique.');
     }
 
-// 7) Clica em "Visão Serviço"
-const visaoServico = page.locator('a[href="/Scheduler"]').first();
-await visaoServico.waitFor({ state: 'visible', timeout: 15_000 });
-await visaoServico.click({ timeout: 30_000, force: true });
+    console.log('✅ Cronograma expandido');
 
-await page.waitForLoadState('networkidle', { timeout: 120_000 });
+    // 7) Clica em "Visão Serviço"
+    console.log('👁️ Acessando Visão Serviço...');
+    const visaoServico = page.locator('a[href="/Scheduler"]').first();
+    await visaoServico.waitFor({ state: 'visible', timeout: 15_000 });
+    await visaoServico.click({ timeout: 30_000, force: true });
 
-    // 8) Wait loading (15s)
-    await page.waitForTimeout(20_000);
+    // NÃO espera networkidle (CIEM tem conexões persistentes)
+    // Apenas aguarda DOM estar pronto
+    await page.waitForLoadState('domcontentloaded', { timeout: 60_000 });
 
-    // 9) Screenshot visão serviço
+    // Aguarda tempo fixo para renderização (em vez de esperar rede)
+    console.log('⏳ Aguardando renderização de Visão Serviço...');
+    await page.waitForTimeout(20_000);  // 20 segundos fixos
+
+    // Valida se página tem conteúdo
+    const pageContent = await page.locator('body').textContent().catch(() => '');
+    if (!pageContent || pageContent.trim().length < 100) {
+      console.warn('⚠️ Página pode estar vazia, mas continuando mesmo assim...');
+    }
+
+    // 8) Screenshot visão serviço
+    console.log('📸 Capturando Visão Serviço...');
     await page.screenshot({ path: screenshotVisao, fullPage: true });
 
     // 10) Clica em "Monitoramento" (nova janela)
