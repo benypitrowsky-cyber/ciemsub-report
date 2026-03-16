@@ -253,34 +253,44 @@ async function run() {
       throw new Error('Cronograma não expandiu após 3 tentativas.');
     }
 
-// 7) Clica em "Visão Serviço"
+// 8) Clica em "Visão Serviço"
+console.log('👁️ Acessando Visão Serviço...');
 const visaoServico = page.locator('a[href="/Scheduler"]').first();
 await visaoServico.waitFor({ state: 'visible', timeout: 15_000 });
 await visaoServico.click({ timeout: 30_000, force: true });
 
-await page.waitForLoadState('networkidle', { timeout: 120_000 });
+// NÃO espera loadState (CIEM tem conexões persistentes que nunca terminam)
+// Apenas aguarda a navegação acontecer
+await page.waitForNavigation({ url: /Scheduler/, timeout: 30_000 }).catch(() => {});
 
-    // 8) Wait loading (15s)
-    await page.waitForTimeout(20_000);
+// Aguarda tempo fixo para renderização (em vez de esperar eventos de rede)
+console.log('⏳ Aguardando renderização de Visão Serviço...');
+await page.waitForTimeout(20_000);
 
-    // 9) Screenshot visão serviço
-    await page.screenshot({ path: screenshotVisao, fullPage: true });
+// 9) Screenshot visão serviço
+console.log('📸 Capturando Visão Serviço...');
+await page.screenshot({ path: screenshotVisao, fullPage: true });
 
-    // 10) Clica em "Monitoramento" (nova janela)
-    const monitoringLink = page.getByRole('link', { name: /Monitoramento/i }).first();
-    await monitoringLink.waitFor({ state: 'visible', timeout: 15_000 });
+// 10) Clica em "Monitoramento"
+console.log('🔍 Acessando Monitoramento...');
+const monitoringLink = page.getByRole('link', { name: /Monitoramento/i }).first();
+await monitoringLink.waitFor({ state: 'visible', timeout: 15_000 });
 
-    const [monitorPage] = await Promise.all([
-      context.waitForEvent('page', { timeout: 60_000 }),
-      monitoringLink.click({ timeout: 30_000, force: true }),
-    ]);
+const [monitorPage] = await Promise.all([
+  context.waitForEvent('page', { timeout: 60_000 }),
+  monitoringLink.click({ timeout: 30_000, force: true }),
+]);
 
-    // 11) Aguarda nova janela
-    await monitorPage.waitForLoadState('domcontentloaded', { timeout: 120_000 });
-    await monitorPage.waitForTimeout(10_000);
+// NÃO espera loadState (mesma razão)
+await monitorPage.waitForNavigation({ timeout: 30_000 }).catch(() => {});
 
-    // 12) Screenshot monitoramento
-    await monitorPage.screenshot({ path: screenshotMon, fullPage: true });
+// Aguarda tempo fixo para renderização
+console.log('⏳ Aguardando renderização de Monitoramento...');
+await monitorPage.waitForTimeout(20_000);
+
+// 11) Screenshot monitoramento
+console.log('📸 Capturando Monitoramento...');
+await monitorPage.screenshot({ path: screenshotMon, fullPage: true });
 
     // 13) Envia e-mail
     const subject = `Relatório CIEMSub - ${new Date().toLocaleString('pt-BR')}`;
