@@ -1,4 +1,4 @@
-name: CIEMSub - Email Report
+name: CIEMSub Report
 
 on:
   schedule:
@@ -9,12 +9,6 @@ on:
     # 6pm São Paulo = 9pm UTC
     - cron: '0 21 * * *'
   workflow_dispatch:
-  # Fallback: dispara a cada 6h como backup (garante execução)
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/ciemsub-report.yml'
   
 jobs:
   run-report:
